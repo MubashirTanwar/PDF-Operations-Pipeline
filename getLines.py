@@ -1,13 +1,32 @@
-import cv2 
+import cv2
 import numpy as np
 import os
 import math
 import sys
-def get_string(img_path):
-    
-    img = cv2.imread(img_path)
+import fitz  # PyMuPDF
 
-    img = cv2.resize(img, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+def extract_pages_from_pdf(pdf_path, temp_dir):
+    # Open the PDF file
+    pdf_document = fitz.open(pdf_path)
+
+    page_images = []
+    for page_num in range(pdf_document.page_count):
+        page = pdf_document[page_num]
+        img = page.get_pixmap(matrix=fitz.Matrix(3, 3))
+        img_array = np.frombuffer(img.samples, dtype=np.uint8).reshape((img.h, img.w, 3))
+
+        # Save each page as a unique image file in the temporary directory
+        page_image_path = os.path.join(temp_dir, f'page_{page_num + 1}.png')
+        cv2.imwrite(page_image_path, cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR))
+        page_images.append(page_image_path)
+
+    # Close the PDF file
+    pdf_document.close()
+
+    return page_images
+
+def process_image(img_path, output_dir, page_num):
+    img = cv2.imread(img_path)
 
     rgb_planes = cv2.split(img)
     result_planes = []
@@ -28,13 +47,9 @@ def get_string(img_path):
     img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
     # kernel_line = np.ones((5, 5), np.uint8)
     # img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel_line)
-    processed_img_path = 'processed.png'
-    cv2.imwrite(processed_img_path, img)
-    
-    draw_contours(processed_img_path)
 
-def draw_contours(img_path): 
-    img = cv2.imread(img_path,0)
+
+    ## CONTOURS 
     original_img = img.copy() 
     
     img = cv2.medianBlur(img, 5)
@@ -72,43 +87,67 @@ def draw_contours(img_path):
     closed = cv2.morphologyEx(dilated, cv2.MORPH_CLOSE, kernel)
 
     # Find contours
-    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(closed, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+
+    sorted_contours = sorted(contours, key=lambda c: cv2.boundingRect(c)[1])
 
 
-    x1=1
-    for i, cnt in enumerate(contours):
-        if cv2.contourArea(cnt) > 1200:  # Set a minimum contour area
-            _,_,w,h = cv2.boundingRect(cnt)
-            aspect_ratio = float(w)/h
-            if 1.8 < aspect_ratio: 
-                if h < img.shape[0] * 0.7 and w < img.shape[0] * 0.6:   # Avoid very large boxes that span most of the image height and width
-                    rect = cv2.minAreaRect(cnt)
-                    box = cv2.boxPoints(rect)
-                    box = np.intp(box)
-                    
-                    width = int(rect[1][0])
-                    height = int(rect[1][1])
+    x1 = 1
+    for i, cnt in enumerate(sorted_contours):
+        if cv2.contourArea(cnt) > 1200:
+                _,_,w,h = cv2.boundingRect(cnt)
+                aspect_ratio = float(w)/h
+                if 1.8 < aspect_ratio: 
+                    if h < img.shape[0] * 0.7 and w < img.shape[0] * 0.6:   # Avoid very large boxes that span most of the image height and width
+                        rect = cv2.minAreaRect(cnt)
+                        box = cv2.boxPoints(rect)
+                        box = np.intp(box)
+                        
+                        width = int(rect[1][0])
+                        height = int(rect[1][1])
 
-                    src_pts = box.astype("float32")
-                    # Coordinate of the points in box points after the rectangle has been straightened
-                    dst_pts = np.array([[0, height-1],
-                                        [0, 0],
-                                        [width-1, 0],
-                                        [width-1, height-1]], dtype="float32")
+                        src_pts = box.astype("float32")
+                        # Coordinate of the points in box points after the rectangle has been straightened
+                        dst_pts = np.array([[0, height-1],
+                                            [0, 0],
+                                            [width-1, 0],
+                                            [width-1, height-1]], dtype="float32")
 
-                    # The perspective transformation matrix
-                    M = cv2.getPerspectiveTransform(src_pts, dst_pts)
-                    warped = cv2.warpPerspective(original_img, M, (width, height))
+                        # The perspective transformation matrix
+                        M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+                        warped = cv2.warpPerspective(original_img, M, (width, height))
 
-                    if height > width:
-                        warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
+                        if height > width:
+                            warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
 
-                    # Save the cropped image
-                    cv2.imwrite(os.path.join(output_dir, f'line_{x1}.png'), warped)
-                    x1+=1
+                        # Save the cropped image
+                        cv2.imwrite(os.path.join(output_dir, f'line_page{page_num + 1}_{x1}.png'), warped)
+                        x1 += 1
+         
 
-if sys.argv != 4:
-    print("usage: python getLines.py imagePath outputDirectory")
-img_path = sys.argv[1]
-output_dir =sys.argv[2]
-get_string(img_path)
+def main(pdf_path, output_directory):
+    temp_dir = 'temp_images'
+    if not os.path.exists(temp_dir):
+        os.makedirs(temp_dir)
+
+    # Extract pages from the PDF into temporary images
+    page_images = extract_pages_from_pdf(pdf_path, temp_dir)
+
+    # Process each extracted image
+    for page_num, page_image in enumerate(page_images):
+        process_image(page_image, output_directory, page_num)
+
+    # Clean up temporary images
+ 
+
+if len(sys.argv) != 3:
+    print("usage: python getLines.py pdfPath outputDirectory")
+    sys.exit(1)
+
+pdf_path = sys.argv[1]
+output_directory = sys.argv[2]
+
+if not os.path.exists(output_directory):
+    os.makedirs(output_directory)
+
+main(pdf_path, output_directory)
