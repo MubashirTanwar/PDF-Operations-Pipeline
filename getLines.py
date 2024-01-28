@@ -43,9 +43,10 @@ def process_image(img_path, output_dir, page_num):
     
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # kernel = np.ones((2, 2), np.uint8)
-    # img = cv2.dilate(img, kernel, iterations=1)
-    # img = cv2.erode(img, kernel, iterations=1) 
+    Dkernel = np.ones((3,3), np.uint8)
+    Ekernel = np.ones((3,3), np.uint8)
+    img = cv2.dilate(img, Dkernel, iterations=1)
+    img = cv2.erode(img, Ekernel, iterations=1) 
 
     img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
     # kernel_line = np.ones((5, 5), np.uint8)
@@ -85,11 +86,11 @@ def process_image(img_path, output_dir, page_num):
     erosion = cv2.erode(opened, kernel)
 
     #dialation
-    kernel = np.ones((2,40), np.uint8)
+    kernel = np.ones((2,48), np.uint8)
     dilated = cv2.dilate(erosion, kernel, iterations=1)
 
     #closing to fill the smalls gaps left by dialation
-    kernel = np.ones((2,10), np.uint8)
+    kernel = np.ones((2,6), np.uint8)
     closed = cv2.morphologyEx(dilated, cv2.MORPH_CLOSE, kernel)
 
     # Find contours
@@ -97,12 +98,12 @@ def process_image(img_path, output_dir, page_num):
     sorted_contours = sorted(contours, key=lambda c: cv2.boundingRect(c)[1])
     img_contours = original_img.copy()
     cv2.drawContours(img_contours, sorted_contours, -1, (0, 255, 0), 1)
-    cv2.imwrite(os.path.join(output_dir, 'contours.png'), img_contours)
+    cv2.imwrite(os.path.join(output_dir, f'page{page_num+1}_contours.png'), img_contours)
 
     x1=1
     boxes = []
     for i, cnt in enumerate(sorted_contours):
-        if cv2.contourArea(cnt) > 800:  # Set a minimum contour area
+        if cv2.contourArea(cnt) > 600:  # Set a minimum contour area
             _,_,w,h = cv2.boundingRect(cnt)
             aspect_ratio = float(w)/h
             if (1.5<aspect_ratio): 
@@ -139,14 +140,14 @@ def process_image(img_path, output_dir, page_num):
                         warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
 
                     # Save the cropped image
-                    cv2.imwrite(os.path.join(output_dir, f'line_{x1}.png'), warped)
+                    cv2.imwrite(os.path.join(output_dir, f'page_{page_num + 1}_line_{x1}.png'), warped)
                     x1+=1
                     boxes.append(box) 
 
     # image with bounding boxes
     for box in boxes:
         cv2.drawContours(original_img,[box],0,(0,255,0),1, lineType=cv2.LINE_AA)
-    filename = os.path.join(output_dir, 'bounding_boxes.png')
+    filename = os.path.join(output_dir, f'page{page_num+1}_bounding_boxes.png')
     cv2.imwrite(filename, original_img)
     print('Saved as', filename)
          
