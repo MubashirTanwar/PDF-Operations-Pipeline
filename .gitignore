@@ -1,0 +1,4 @@
+# Ignore all files inside the output folder
+output/*
+# Except for the .gitkeep file
+!output/.gitkeep
