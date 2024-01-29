@@ -43,10 +43,12 @@ def process_image(img_path, output_dir, page_num):
     
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    Dkernel = np.ones((3,3), np.uint8)
-    Ekernel = np.ones((3,3), np.uint8)
-    img = cv2.dilate(img, Dkernel, iterations=1)
+    # _, binary_image = cv2.threshold(img, 128, 255, cv2.THRESH_BINARY_INV)
+    Dkernel = np.ones((4,4), np.uint8)
+    Ekernel = np.ones((5,5), np.uint8)
+    
     img = cv2.erode(img, Ekernel, iterations=1) 
+    img = cv2.dilate(img, Dkernel, iterations=1)
 
     img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
     # kernel_line = np.ones((5, 5), np.uint8)
@@ -61,7 +63,7 @@ def process_image(img_path, output_dir, page_num):
     img = cv2.GaussianBlur(img, (5, 5), 0)
 
     # Threshold the image
-    # _, threshed = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    _, threshed = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     threshed = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                      cv2.THRESH_BINARY_INV, 11, 1)
 
@@ -86,11 +88,11 @@ def process_image(img_path, output_dir, page_num):
     erosion = cv2.erode(opened, kernel)
 
     #dialation
-    kernel = np.ones((2,48), np.uint8)
+    kernel = np.ones((2,80), np.uint8)
     dilated = cv2.dilate(erosion, kernel, iterations=1)
 
     #closing to fill the smalls gaps left by dialation
-    kernel = np.ones((2,6), np.uint8)
+    kernel = np.ones((2,40), np.uint8)
     closed = cv2.morphologyEx(dilated, cv2.MORPH_CLOSE, kernel)
 
     # Find contours
@@ -102,19 +104,21 @@ def process_image(img_path, output_dir, page_num):
 
     x1=1
     boxes = []
+    count_bound = 0
     for i, cnt in enumerate(sorted_contours):
-        if cv2.contourArea(cnt) > 600:  # Set a minimum contour area
+        if cv2.contourArea(cnt) > 2500:  # Set a minimum contour area
             _,_,w,h = cv2.boundingRect(cnt)
             aspect_ratio = float(w)/h
             if (1.5<aspect_ratio): 
                 if h < img.shape[0] * 0.7 and w < img.shape[0] * 0.8:   # Avoid very large boxes that span most of the image height and width
+                    count_bound+=1
                     rect = cv2.minAreaRect(cnt)
                     box = cv2.boxPoints(rect)
                     box = np.intp(box)
                     
                     # Increase top and bottom height
-                    top_increase_factor = 4   
-                    bottom_increase_factor = 3  
+                    top_increase_factor = 5   
+                    bottom_increase_factor = 4  
                     center_y = sum([point[1] for point in box]) / 4
                     for point in box:
                         if point[1] < center_y:
@@ -139,8 +143,8 @@ def process_image(img_path, output_dir, page_num):
                     if height > width:
                         warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
 
-                    # Save the cropped image
-                    cv2.imwrite(os.path.join(output_dir, f'page_{page_num + 1}_line_{x1}.png'), warped)
+    #                 # Save the cropped image
+    #                 cv2.imwrite(os.path.join(output_dir, f'page_{page_num + 1}_line_{x1}.png'), warped)
                     x1+=1
                     boxes.append(box) 
 
@@ -159,11 +163,9 @@ def main(pdf_path, output_directory):
 
     # Extract pages from the PDF into temporary images
     page_images = extract_pages_from_pdf(pdf_path, temp_dir)
-
     # Process each extracted image
     for page_num, page_image in enumerate(page_images):
         process_image(page_image, output_directory, page_num)
-
     # Clean up temporary images
  
 
